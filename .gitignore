@@ -1,0 +1,21 @@
+# Local database credentials - NEVER commit real DB passwords
+backend/config/database.local.php
+
+# Uploaded content (keep folder, ignore contents)
+backend/uploads/book_covers/*
+!backend/uploads/book_covers/.gitkeep
+backend/uploads/logo/*
+!backend/uploads/logo/.gitkeep
+
+# Database backups (can contain sensitive data)
+backend/backups/*.sql
+!backend/backups/.gitkeep
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
+backend/uploads/avatars/*
+!backend/uploads/avatars/.gitkeep

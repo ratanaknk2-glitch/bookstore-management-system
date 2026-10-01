@@ -1,0 +1,7 @@
+# Block directory listing
+Options -Indexes
+
+# Deny access to config, includes, classes folders directly from the web
+<FilesMatch "\.(sql|log|env)$">
+  Require all denied
+</FilesMatch>

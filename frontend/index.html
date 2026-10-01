@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Book Store Management System</title>
+<script src="assets/js/api.js"></script>
+</head>
+<body>
+<script>
+  Api.get('/auth/session.php')
+    .then(() => { location.href = 'app.html'; })
+    .catch(() => { location.href = 'login.html'; });
+</script>
+</body>
+</html>
