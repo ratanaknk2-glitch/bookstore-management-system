@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inventory - Book Store MS</title>
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<div class="page">
+  <div class="toolbar toolbar-end">
+    <button class="btn" id="addBtn">+ Stock Movement</button>
+  </div>
+  <div class="card mb-3">
+    <h2>Low Stock Alert</h2>
+    <div id="lowStock"><div class="loading">Loading...</div></div>
+  </div>
+  <div class="card">
+    <h2>Recent Inventory History</h2>
+    <div id="history"><div class="loading">Loading...</div></div>
+  </div>
+</div>
+
+<script src="assets/js/api.js"></script>
+<script src="assets/js/toast.js"></script>
+<script src="assets/js/common.js"></script>
+<script>
+  let books = [];
+  Embedded.init('inventory').then(async () => {
+    const b = await Api.get('/books/index.php?per_page=100');
+    books = b.items;
+    loadLowStock();
+    loadHistory();
+    document.getElementById('addBtn').addEventListener('click', openMovementForm);
+  });
+
+  async function loadLowStock() {
+    const rep = await Api.get('/reports/index.php?type=low_stock');
+    const el = document.getElementById('lowStock');
+    el.innerHTML = rep.length ? `
+      <table><thead><tr><th>Title</th><th>ISBN</th><th>Qty</th><th>Reorder Level</th></tr></thead>
+      <tbody>${rep.map(b => `<tr><td>${escapeHtml(b.title)}</td><td>${escapeHtml(b.isbn)}</td><td><span class="badge badge-danger">${b.quantity}</span></td><td>${b.reorder_level}</td></tr>`).join('')}</tbody></table>
+    ` : '<div class="empty-state">Stock levels are healthy.</div>';
+  }
+
+  async function loadHistory() {
+    const list = await Api.get('/inventory/index.php');
+    const el = document.getElementById('history');
+    el.innerHTML = list.length ? `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Date</th><th>Book</th><th>Type</th><th>Qty</th><th>Reference</th><th>By</th></tr></thead>
+        <tbody>${list.map(t => `
+          <tr>
+            <td>${new Date(t.created_at).toLocaleString()}</td>
+            <td>${escapeHtml(t.title)}</td>
+            <td><span class="badge ${t.type === 'Stock In' ? 'badge-success' : t.type === 'Stock Out' ? 'badge-warning' : 'badge-info'}">${t.type}</span></td>
+            <td>${t.quantity}</td>
+            <td>${escapeHtml(t.reference || '—')}</td>
+            <td>${escapeHtml(t.performed_by_name || '—')}</td>
+          </tr>`).join('')}</tbody>
+      </table></div>` : '<div class="empty-state">No inventory movements yet.</div>';
+  }
+
+  function openMovementForm() {
+    Modal.open('Stock Movement', `
+      <form id="moveForm">
+        <div class="form-group">
+          <label>Book *</label>
+          <select name="book_id" required>${books.map(b => `<option value="${b.book_id}">${escapeHtml(b.title)} (current: ${b.quantity})</option>`).join('')}</select>
+        </div>
+        <div class="form-group">
+          <label>Type *</label>
+          <select name="type" required>
+            <option value="Stock In">Stock In</option>
+            <option value="Stock Out">Stock Out</option>
+            <option value="Adjustment">Adjustment (set exact quantity — physical stock check)</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Quantity *</label><input type="number" name="quantity" min="1" required></div>
+        <div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
+      </form>
+    `, `
+      <button class="btn btn-outline" onclick="Modal.close()">Cancel</button>
+      <button class="btn" onclick="submitMovement()">Save</button>
+    `);
+  }
+
+  async function submitMovement() {
+    const form = document.getElementById('moveForm');
+    const data = Object.fromEntries(new FormData(form).entries());
+    try {
+      await Api.post('/inventory/index.php', data);
+      Toast.success('Inventory updated.');
+      Modal.close();
+      loadLowStock();
+      loadHistory();
+      if (window.top && window.top !== window && window.top.Layout) {
+        window.top.Layout.loadNotificationBadge();
+      }
+    } catch (e) {}
+  }
+</script>
+</body>
+</html>
