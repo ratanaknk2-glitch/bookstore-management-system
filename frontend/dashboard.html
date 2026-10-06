@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard - Book Store MS</title>
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<div class="page">
+  <div id="statsGrid" class="stats-grid"><div class="loading">Loading stats...</div></div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h2>Sales - Last 7 Days</h2>
+      <div id="salesChart"></div>
+    </div>
+    <div class="card">
+      <h2>Best Selling Books</h2>
+      <div id="bestSellers"></div>
+    </div>
+  </div>
+
+  <div class="card mt-3">
+    <h2>Low Stock Alert</h2>
+    <div id="lowStockTable"></div>
+  </div>
+</div>
+
+<script src="assets/js/api.js"></script>
+<script src="assets/js/toast.js"></script>
+<script src="assets/js/common.js"></script>
+<script>
+  Embedded.init('dashboard').then(loadDashboard);
+
+  async function loadDashboard() {
+    try {
+      const s = await Api.get('/dashboard/index.php');
+      renderStats(s);
+      renderChart(s.sales_chart);
+      renderBestSellers(s.best_selling_books);
+      renderLowStock(s.low_stock_items);
+    } catch (e) { /* toast already shown by Api */ }
+  }
+
+  function renderStats(s) {
+    const cards = [
+      ['Total Books', s.total_books],
+      ['Total Categories', s.total_categories],
+      ['Total Customers', s.total_customers],
+      ['Total Suppliers', s.total_suppliers],
+      ['Available Stock', s.available_stock],
+      ['Low Stock Alerts', s.low_stock_count],
+      ["Today's Sales", '$' + Number(s.today_sales).toFixed(2)],
+      ['Monthly Revenue', '$' + Number(s.monthly_revenue).toFixed(2)],
+    ];
+    document.getElementById('statsGrid').innerHTML = cards.map(([label, value]) => `
+      <div class="card">
+        <div class="card-title">${label}</div>
+        <div class="card-value">${value}</div>
+      </div>
+    `).join('');
+  }
+
+  function renderChart(chart) {
+    const max = Math.max(1, ...chart.map(d => d.total));
+    const bars = chart.map(d => {
+      const heightPct = Math.round((d.total / max) * 100);
+      const day = new Date(d.date).toLocaleDateString(undefined, { weekday: 'short' });
+      return `
+        <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:6px;">
+          <div style="font-size:12px; color:var(--color-text-muted);">$${Number(d.total).toFixed(0)}</div>
+          <div style="width:70%; background:var(--color-primary); height:${Math.max(4, heightPct)}px;"></div>
+          <div style="font-size:12px;">${day}</div>
+        </div>`;
+    }).join('');
+    document.getElementById('salesChart').innerHTML = `
+      <div style="display:flex; align-items:flex-end; height:160px; gap:8px; border-bottom:1px solid var(--color-border); padding-top:20px;">
+        ${bars}
+      </div>`;
+  }
+
+  function renderBestSellers(list) {
+    if (!list.length) {
+      document.getElementById('bestSellers').innerHTML = '<div class="empty-state">No sales data yet.</div>';
+      return;
+    }
+    document.getElementById('bestSellers').innerHTML = `
+      <table>
+        <thead><tr><th>Book</th><th>Units Sold</th></tr></thead>
+        <tbody>
+          ${list.map(b => `<tr><td>${escapeHtml(b.title)}</td><td>${b.total_sold}</td></tr>`).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  function renderLowStock(list) {
+    if (!list.length) {
+      document.getElementById('lowStockTable').innerHTML = '<div class="empty-state">All stock levels are healthy.</div>';
+      return;
+    }
+    document.getElementById('lowStockTable').innerHTML = `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Title</th><th>ISBN</th><th>Quantity</th><th>Reorder Level</th></tr></thead>
+        <tbody>
+          ${list.map(b => `
+            <tr>
+              <td>${escapeHtml(b.title)}</td>
+              <td>${escapeHtml(b.isbn)}</td>
+              <td><span class="badge badge-danger">${b.quantity}</span></td>
+              <td>${b.reorder_level}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table></div>`;
+  }
+</script>
+</body>
+</html>

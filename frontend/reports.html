@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reports - Book Store MS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=2">
+<style media="print">
+  /* Scoped to this document only - safe, does not affect other pages */
+@page {
+    size: A4 landscape;
+    margin: 15mm;
+  }
+  .no-print { display: none !important; }
+  .print-only { display: block !important; }
+  body { background: #fff !important; }
+  .page { padding: 8mm !important; }
+  .card { border: none !important; padding: 0 !important; }
+  .table-wrap { border: none !important; overflow: visible !important; }
+table {
+    width: 100% !important;
+    table-layout: auto !important;
+    border-collapse: collapse !important;
+    border: 1px solid #cfe3f2 !important;
+  }
+th, td {
+    white-space: normal !important;
+    word-break: break-word;
+    font-size: 11px;
+    padding: 5px 8px !important;
+    border: 1px solid #cfe3f2 !important;
+  }
+  th { text-align: center !important; }
+  tr:nth-child(even) td { background: #fafcfe !important; }
+
+  #printHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #5aa9d6;
+  }
+  .print-header-brand { display: flex; align-items: center; gap: 10px; }
+  .print-logo {
+    width: 40px;
+    height: 40px;
+    border-radius: 4px;
+    border: 1px solid #cfe3f2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .print-logo img { width: 100%; height: 100%; object-fit: contain; }
+  .print-store-name { font-size: 17px; font-weight: 700; color: #253746; line-height: 1.2; }
+  .print-report-title { font-size: 12px; color: #3d8bbd; font-weight: 600; margin-top: 1px; }
+  .print-report-range { font-size: 10px; color: #6b8494; margin: 0; text-align: right; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="page">
+<div class="toolbar no-print">
+    <div class="filters">
+      <select id="reportType">
+        <option value="inventory">Book Inventory Report</option>
+        <option value="sales">Sales Report</option>
+        <option value="purchase">Purchase Report</option>
+        <option value="customer">Customer Report</option>
+        <option value="supplier">Supplier Report</option>
+        <option value="author">Author Report</option>
+        <option value="revenue">Revenue Report</option>
+        <option value="profit_loss">Profit &amp; Loss Report</option>
+        <option value="low_stock">Low Stock Report</option>
+        <option value="best_selling">Best Selling Books Report</option>
+      </select>
+      <input type="date" id="fromDate">
+      <input type="date" id="toDate">
+      <button class="btn" id="runBtn">Generate</button>
+    </div>
+    <div class="filters">
+      <button class="btn btn-outline" id="printBtn">🖨 Print</button>
+      <button class="btn btn-outline" id="csvBtn">⬇ Export Excel (CSV)</button>
+    </div>
+  </div>
+
+<div id="printHeader" class="print-only">
+    <div class="print-header-brand">
+      <div id="printLogo" class="print-logo"></div>
+      <div>
+        <div id="printStoreName" class="print-store-name">The Book Store</div>
+        <div id="printReportTitle" class="print-report-title"></div>
+      </div>
+    </div>
+    <p id="printReportRange" class="print-report-range"></p>
+  </div>
+
+  <div class="card">
+    <div id="reportOutput"><div class="empty-state">Choose a report type and click Generate.</div></div>
+  </div>
+</div>
+
+<script src="assets/js/api.js"></script>
+<script src="assets/js/toast.js"></script>
+<script src="assets/js/common.js"></script>
+<script>
+let currentData = [];
+  let storeName = 'The Book Store';
+  let storeLogoUrl = '';
+
+  Embedded.init('reports').then(async () => {
+    document.getElementById('fromDate').value = new Date(new Date().setDate(1)).toISOString().slice(0,10);
+    document.getElementById('toDate').value = new Date().toISOString().slice(0,10);
+    document.getElementById('runBtn').addEventListener('click', runReport);
+    document.getElementById('printBtn').addEventListener('click', () => window.print());
+    document.getElementById('csvBtn').addEventListener('click', exportCsv);
+    loadPrintBranding();
+  });
+
+  async function loadPrintBranding() {
+    try {
+      const settings = await Api.get('/settings/index.php');
+      if (settings.store_name) storeName = settings.store_name;
+      const logoEl = document.getElementById('printLogo');
+      if (settings.store_logo) {
+        storeLogoUrl = `../backend/uploads/logo/${settings.store_logo}`;
+        logoEl.innerHTML = `<img src="${storeLogoUrl}" alt="">`;
+      } else {
+        logoEl.textContent = '📚';
+      }
+      document.getElementById('printStoreName').textContent = storeName;
+    } catch (e) { /* branding is a nice-to-have, don't block printing on it */ }
+  }
+
+async function runReport() {
+    const type = document.getElementById('reportType').value;
+    const from = document.getElementById('fromDate').value;
+    const to = document.getElementById('toDate').value;
+    const typeLabel = document.getElementById('reportType').selectedOptions[0].textContent;
+const generatedAt = new Date().toLocaleString(undefined, {
+      year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+    document.getElementById('printReportTitle').textContent = typeLabel;
+    document.getElementById('printReportRange').textContent =
+      (from && to ? `${from} to ${to}` : '') + ` · Generated on ${generatedAt}`;
+    document.getElementById('reportOutput').innerHTML = '<div class="loading">Generating report...</div>';
+    try {
+      currentData = await Api.get(`/reports/index.php?type=${type}&from=${from}&to=${to}`);
+      renderReport();
+    } catch (e) {}
+  }
+
+  function renderReport() {
+    const el = document.getElementById('reportOutput');
+    if (!currentData.length) { el.innerHTML = '<div class="empty-state">No data found for this report.</div>'; return; }
+    const columns = Object.keys(currentData[0]);
+    el.innerHTML = `
+      <div class="table-wrap"><table>
+        <thead><tr>${columns.map(c => `<th>${formatHeader(c)}</th>`).join('')}</tr></thead>
+        <tbody>
+          ${currentData.map(row => `<tr>${columns.map(c => `<td>${escapeHtml(row[c])}</td>`).join('')}</tr>`).join('')}
+        </tbody>
+      </table></div>`;
+  }
+
+  function formatHeader(key) {
+    return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  }
+
+  function exportCsv() {
+    if (!currentData.length) { Toast.error('Generate a report first.'); return; }
+    const columns = Object.keys(currentData[0]);
+    const rows = [columns.join(',')].concat(
+      currentData.map(row => columns.map(c => `"${String(row[c] ?? '').replace(/"/g, '""')}"`).join(','))
+    );
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = document.getElementById('reportType').value + '_report.csv';
+    a.click();
+  }
+</script>
+</body>
+</html>

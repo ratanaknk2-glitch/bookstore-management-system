@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Notifications - Book Store MS</title>
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<div class="page">
+  <div class="card">
+    <div id="notifList"><div class="loading">Loading...</div></div>
+  </div>
+</div>
+
+<script src="assets/js/api.js"></script>
+<script src="assets/js/toast.js"></script>
+<script src="assets/js/common.js"></script>
+<script>
+  Embedded.init('notifications').then(load);
+
+  async function load() {
+    const data = await Api.get('/notifications/index.php');
+    const el = document.getElementById('notifList');
+    const all = [
+      ...data.live.map(n => ({ ...n, isLive: true })),
+      ...data.stored.map(n => ({ ...n, isLive: false })),
+    ];
+    if (!all.length) { el.innerHTML = '<div class="empty-state">No notifications right now.</div>'; return; }
+    el.innerHTML = all.map(n => `
+      <div class="flex-between" style="padding:10px 0; border-bottom:1px solid var(--color-border);">
+        <div>
+          <span class="badge badge-info">${escapeHtml(n.type)}</span>
+          <span style="margin-left:8px;">${escapeHtml(n.message)}</span>
+        </div>
+        ${!n.isLive && !n.is_read ? `<button class="btn btn-outline btn-sm" onclick="markRead(${n.notification_id})">Mark Read</button>` : ''}
+      </div>`).join('');
+  }
+
+  async function markRead(id) {
+    try {
+      await Api.put('/notifications/index.php', { notification_id: id });
+      load();
+      // The badge lives in the parent shell (app.html), not in this iframe, so
+      // tell it to re-check the count right away instead of waiting for the
+      // next tab switch or the 60s background poll.
+      if (window.top && window.top !== window && window.top.Layout) {
+        window.top.Layout.loadNotificationBadge();
+      }
+    } catch (e) {}
+  }
+</script>
+</body>
+</html>
