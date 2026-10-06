@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Categories - Book Store MS</title>
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<div class="page">
+  <div class="toolbar">
+    <div class="filters"><input type="text" id="searchInput" placeholder="Search Categories..."></div>
+    <button class="btn" id="addBtn" style="display:none;">+ Add Categorie</button>
+  </div>
+  <div id="crudTable" class="table-wrap"><div class="loading">Loading...</div></div>
+</div>
+
+<script src="assets/js/api.js"></script>
+<script src="assets/js/toast.js"></script>
+<script src="assets/js/common.js"></script>
+<script src="assets/js/simple_crud.js"></script>
+<script>
+  Embedded.init('categories').then(() => {
+    const canWrite = Embedded.hasRole('Admin', 'Manager');
+    if (canWrite) document.getElementById('addBtn').style.display = 'inline-block';
+    
+    initSimpleCrud({
+      endpoint: "/categories/index.php",
+      idField: "category_id",
+      title: "Category",
+      canWrite,
+      columns: [
+        { key: "category_name", label: "Name" },
+        { key: "description", label: "Description" },
+      ],
+      formFields: [
+        { name: "category_name", label: "Category Name", required: true },
+        { name: "description", label: "Description", type: "textarea" },
+      ],
+    });
+
+  });
+</script>
+</body>
+</html>

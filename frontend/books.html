@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Books - Book Store MS</title>
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<div class="page">
+  <div class="toolbar">
+    <div class="filters">
+      <input type="text" id="searchInput" placeholder="Search by title, ISBN, or author...">
+      <select id="categoryFilter"><option value="">All Categories</option></select>
+      <select id="statusFilter">
+        <option value="">All Status</option>
+        <option value="Available">Available</option>
+        <option value="Out of Stock">Out of Stock</option>
+        <option value="Discontinued">Discontinued</option>
+      </select>
+    </div>
+    <button class="btn" id="addBookBtn">+ Add Book</button>
+  </div>
+
+  <div id="booksTable" class="table-wrap"><div class="loading">Loading books...</div></div>
+  <div id="pagination" class="flex-between mt-3"></div>
+</div>
+
+<script src="assets/js/api.js"></script>
+<script src="assets/js/toast.js"></script>
+<script src="assets/js/common.js"></script>
+<script>
+  let currentPage = 1;
+  let categories = [], authors = [], publishers = [];
+
+  Embedded.init('books').then(async () => {
+    await loadLookups();
+    loadBooks();
+    document.getElementById('addBookBtn').addEventListener('click', () => openBookForm());
+    document.getElementById('searchInput').addEventListener('input', debounce(() => { currentPage = 1; loadBooks(); }, 400));
+    document.getElementById('categoryFilter').addEventListener('change', () => { currentPage = 1; loadBooks(); });
+    document.getElementById('statusFilter').addEventListener('change', () => { currentPage = 1; loadBooks(); });
+  });
+
+  function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+
+  async function loadLookups() {
+    [categories, authors, publishers] = await Promise.all([
+      Api.get('/categories/index.php'),
+      Api.get('/authors/index.php'),
+      Api.get('/publishers/index.php'),
+    ]);
+    document.getElementById('categoryFilter').innerHTML += categories.map(c => `<option value="${c.category_id}">${escapeHtml(c.category_name)}</option>`).join('');
+  }
+
+  async function loadBooks() {
+    const search = document.getElementById('searchInput').value.trim();
+    const category = document.getElementById('categoryFilter').value;
+    const status = document.getElementById('statusFilter').value;
+    const params = new URLSearchParams({ page: currentPage, per_page: 15 });
+    if (search) params.set('search', search);
+    if (category) params.set('category_id', category);
+    if (status) params.set('status', status);
+
+    document.getElementById('booksTable').innerHTML = '<div class="loading">Loading books...</div>';
+    try {
+      const result = await Api.get('/books/index.php?' + params.toString());
+      renderBooks(result.items);
+      renderPagination(result);
+    } catch (e) {}
+  }
+
+  function statusBadge(status) {
+    const cls = status === 'Available' ? 'badge-success' : status === 'Out of Stock' ? 'badge-warning' : 'badge-danger';
+    return `<span class="badge ${cls}">${status}</span>`;
+  }
+
+  function renderBooks(items) {
+    if (!items.length) {
+      document.getElementById('booksTable').innerHTML = '<div class="empty-state">No books found.</div>';
+      return;
+    }
+    const canEdit = Embedded.hasRole('Admin', 'Manager');
+document.getElementById('booksTable').innerHTML = `
+      <table class="table-compact">
+        <thead><tr>
+          <th>Cover</th><th>Title</th><th>ISBN</th><th>Author</th><th>Category</th>
+          <th>Price</th><th>Qty</th><th>Status</th><th>Actions</th>
+        </tr></thead>
+        <tbody>
+          ${items.map(b => `
+            <tr>
+              <td>${b.cover_image
+                ? `<img src="../backend/uploads/book_covers/${b.cover_image}" class="table-book-cover" alt="${escapeHtml(b.title)}">`
+                : `<div class="table-book-cover table-book-cover-placeholder">
+                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                       <path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v18H6.5A2.5 2.5 0 0 0 4 22.5z"/>
+                       <path d="M4 4.5v16A2.5 2.5 0 0 0 6.5 23"/>
+                     </svg>
+                   </div>`}</td>
+              <td>${escapeHtml(b.title)}</td>
+              <td>${escapeHtml(b.isbn)}</td>
+              <td>${escapeHtml(b.author_name || '—')}</td>
+              <td>${escapeHtml(b.category_name || '—')}</td>
+              <td>$${Number(b.selling_price).toFixed(2)}</td>
+              <td>${b.quantity}</td>
+              <td>${statusBadge(b.status)}</td>
+              <td>
+                <button class="btn btn-outline btn-sm" onclick="viewBook(${b.book_id})">View</button>
+                ${canEdit ? `<button class="btn btn-outline btn-sm" onclick="openBookForm(${b.book_id})">Edit</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteBook(${b.book_id})">Delete</button>` : ''}
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  function renderPagination(result) {
+    const el = document.getElementById('pagination');
+    if (result.total_pages <= 1) { el.innerHTML = ''; return; }
+    el.innerHTML = `
+      <span class="text-muted">Page ${result.page} of ${result.total_pages} (${result.total} books)</span>
+      <div class="flex gap-2">
+        <button class="btn btn-outline btn-sm" ${result.page <= 1 ? 'disabled' : ''} onclick="changePage(${result.page - 1})">Previous</button>
+        <button class="btn btn-outline btn-sm" ${result.page >= result.total_pages ? 'disabled' : ''} onclick="changePage(${result.page + 1})">Next</button>
+      </div>`;
+  }
+  function changePage(p) { currentPage = p; loadBooks(); }
+
+  async function viewBook(id) {
+    const b = await Api.get('/books/index.php?id=' + id);
+    Modal.open('Book Details', `
+      <p><b>Title:</b> ${escapeHtml(b.title)}</p>
+      <p><b>ISBN:</b> ${escapeHtml(b.isbn)}</p>
+      <p><b>Author:</b> ${escapeHtml(b.author_name || '—')}</p>
+      <p><b>Publisher:</b> ${escapeHtml(b.publisher_name || '—')}</p>
+      <p><b>Category:</b> ${escapeHtml(b.category_name || '—')}</p>
+      <p><b>Language:</b> ${escapeHtml(b.language || '—')}</p>
+      <p><b>Edition:</b> ${escapeHtml(b.edition || '—')}</p>
+      <p><b>Publication Year:</b> ${b.publication_year || '—'}</p>
+      <p><b>Purchase Price:</b> $${Number(b.purchase_price).toFixed(2)}</p>
+      <p><b>Selling Price:</b> $${Number(b.selling_price).toFixed(2)}</p>
+      <p><b>Quantity:</b> ${b.quantity}</p>
+      <p><b>Shelf Location:</b> ${escapeHtml(b.shelf_location || '—')}</p>
+      <p><b>Status:</b> ${statusBadge(b.status)}</p>
+    `);
+  }
+
+  function optionsHtml(list, idKey, nameKey, selected) {
+    return `<option value="">-- None --</option>` + list.map(x =>
+      `<option value="${x[idKey]}" ${x[idKey] == selected ? 'selected' : ''}>${escapeHtml(x[nameKey])}</option>`
+    ).join('');
+  }
+
+  async function openBookForm(id) {
+    let book = {};
+    if (id) book = await Api.get('/books/index.php?id=' + id);
+
+    Modal.open(id ? 'Edit Book' : 'Add Book', `
+      <form id="bookForm">
+        <div class="form-row">
+          <div class="form-group"><label>ISBN *</label><input name="isbn" value="${escapeHtml(book.isbn || '')}" required></div>
+          <div class="form-group"><label>Title *</label><input name="title" value="${escapeHtml(book.title || '')}" required></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Author</label><select name="author_id">${optionsHtml(authors, 'author_id', 'author_name', book.author_id)}</select></div>
+          <div class="form-group"><label>Publisher</label><select name="publisher_id">${optionsHtml(publishers, 'publisher_id', 'publisher_name', book.publisher_id)}</select></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Category</label><select name="category_id">${optionsHtml(categories, 'category_id', 'category_name', book.category_id)}</select></div>
+          <div class="form-group"><label>Language</label><input name="language" value="${escapeHtml(book.language || 'English')}"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Edition</label><input name="edition" value="${escapeHtml(book.edition || '')}"></div>
+          <div class="form-group"><label>Publication Year</label><input type="number" name="publication_year" value="${book.publication_year || ''}"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Purchase Price *</label><input type="number" step="0.01" name="purchase_price" value="${book.purchase_price ?? ''}" required></div>
+          <div class="form-group"><label>Selling Price *</label><input type="number" step="0.01" name="selling_price" value="${book.selling_price ?? ''}" required></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Quantity *</label><input type="number" name="quantity" value="${book.quantity ?? 0}" required></div>
+          <div class="form-group"><label>Reorder Level</label><input type="number" name="reorder_level" value="${book.reorder_level ?? 5}"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Shelf Location</label><input name="shelf_location" value="${escapeHtml(book.shelf_location || '')}"></div>
+          <div class="form-group"><label>Status</label>
+            <select name="status">
+              ${['Available','Out of Stock','Discontinued'].map(s => `<option ${book.status===s?'selected':''}>${s}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="form-group"><label>Cover Image</label><input type="file" id="coverInput" accept="image/*">
+          ${id && book.cover_image ? `<p class="hint">Current cover: ${escapeHtml(book.cover_image)}. Choosing a new file will replace it.</p>` : '<p class="hint">Optional - you can also add this later by editing the book.</p>'}
+        </div>
+      </form>
+    `, `
+      <button class="btn btn-outline" onclick="Modal.close()">Cancel</button>
+      <button class="btn" id="saveBookBtn">Save</button>
+    `);
+
+    document.getElementById('saveBookBtn').addEventListener('click', () => saveBook(id));
+  }
+
+  async function saveBook(id) {
+    const form = document.getElementById('bookForm');
+    const data = Object.fromEntries(new FormData(form).entries());
+    if (id) data.book_id = id;
+
+    try {
+      const result = id ? await Api.put('/books/index.php', data) : await Api.post('/books/index.php', data);
+      const bookId = id || result.book_id;
+
+      const coverInput = document.getElementById('coverInput');
+      if (coverInput && coverInput.files[0]) {
+        const fd = new FormData();
+        fd.append('cover', coverInput.files[0]);
+        fd.append('book_id', bookId);
+        await Api.upload('/books/upload_cover.php', fd);
+      }
+
+      Toast.success(id ? 'Book updated.' : 'Book created.');
+      Modal.close();
+      loadBooks();
+      // Quantity or reorder level may have been edited directly here, which can
+      // cross the low-stock threshold - refresh the badge right away.
+      if (window.top && window.top !== window && window.top.Layout) {
+        window.top.Layout.loadNotificationBadge();
+      }
+    } catch (e) {}
+  }
+
+  async function deleteBook(id) {
+    if (!confirmAction('Delete this book? This cannot be undone.')) return;
+    try {
+      await Api.del('/books/index.php?id=' + id);
+      Toast.success('Book deleted.');
+      loadBooks();
+      if (window.top && window.top !== window && window.top.Layout) {
+        window.top.Layout.loadNotificationBadge();
+      }
+    } catch (e) {}
+  }
+</script>
+</body>
+</html>

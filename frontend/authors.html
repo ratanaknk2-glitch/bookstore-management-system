@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Authors - Book Store MS</title>
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<div class="page">
+  <div class="toolbar">
+    <div class="filters"><input type="text" id="searchInput" placeholder="Search Authors..."></div>
+    <button class="btn" id="addBtn" style="display:none;">+ Add Author</button>
+  </div>
+  <div id="crudTable" class="table-wrap"><div class="loading">Loading...</div></div>
+</div>
+
+<script src="assets/js/api.js"></script>
+<script src="assets/js/toast.js"></script>
+<script src="assets/js/common.js"></script>
+<script src="assets/js/simple_crud.js"></script>
+<script>
+  Embedded.init('authors').then(() => {
+    const canWrite = Embedded.hasRole('Admin', 'Manager');
+    if (canWrite) document.getElementById('addBtn').style.display = 'inline-block';
+    
+    initSimpleCrud({
+      endpoint: "/authors/index.php",
+      idField: "author_id",
+      title: "Author",
+      canWrite,
+      columns: [
+        { key: "author_name", label: "Name" },
+        { key: "nationality", label: "Nationality" },
+        { key: "biography", label: "Biography" },
+      ],
+      formFields: [
+        { name: "author_name", label: "Author Name", required: true },
+        { name: "nationality", label: "Nationality" },
+        { name: "biography", label: "Biography", type: "textarea" },
+      ],
+    });
+
+  });
+</script>
+</body>
+</html>
