@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Discounts & Promotions - Book Store MS</title>
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<div id="app-shell">
+  <div class="toolbar">
+    <h1>Discounts & Promotions</h1>
+    <button class="btn" id="addBtn">+ Add</button>
+  </div>
+  <div class="toolbar">
+    <div class="filters"><input type="text" id="searchInput" placeholder="Search..."></div>
+  </div>
+  <div id="crudTable" class="table-wrap"><div class="loading">Loading...</div></div>
+</div>
+
+<script src="assets/js/api.js"></script>
+<script src="assets/js/toast.js"></script>
+<script src="assets/js/common.js"></script>
+<script src="assets/js/simple_crud.js"></script>
+<script>
+  Layout.init('discounts').then(() => {
+    
+    initSimpleCrud({
+      endpoint: "/discounts/index.php",
+      idField: "discount_id",
+      title: "Discount",
+      canWrite: Layout.hasRole("Admin","Manager"),
+      columns: [
+        { key: "code", label: "Code" },
+        { key: "name", label: "Name" },
+        { key: "type", label: "Type" },
+        { key: "value", label: "Value" },
+        { key: "used_count", label: "Used" },
+        { key: "status", label: "Status" },
+      ],
+      formFields: [
+        { name: "code", label: "Coupon Code", required: true },
+        { name: "name", label: "Campaign Name", required: true },
+        { name: "type", label: "Type", type: "select", options: [{value:"percentage",label:"Percentage"},{value:"fixed",label:"Fixed Amount"}] },
+        { name: "value", label: "Value", type: "number", required: true },
+        { name: "start_date", label: "Start Date", type: "date" },
+        { name: "end_date", label: "End Date", type: "date" },
+        { name: "usage_limit", label: "Usage Limit", type: "number" },
+        { name: "status", label: "Status", type: "select", options: [{value:"active",label:"Active"},{value:"inactive",label:"Inactive"}] },
+      ],
+    });
+    if (!Layout.hasRole("Admin","Manager")) document.getElementById("addBtn").style.display = "none";
+
+  });
+</script>
+</body>
+</html>
