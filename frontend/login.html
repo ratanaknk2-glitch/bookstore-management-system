@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login - Book Store Management System</title>
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="login-card">
+      <div class="login-brand">
+        <h1 id="brandTitle">📚 Book Store MS</h1>
+        <p class="text-muted">Sign in to continue</p>
+      </div>
+      <form id="loginForm">
+        <div class="form-group">
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username" required autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" required autocomplete="current-password">
+        </div>
+        <div id="loginError" class="form-error" style="display:none;"></div>
+        <button type="submit" class="btn btn-block" id="loginBtn">Sign In</button>
+      </form>
+      <p class="hint mt-3 text-center">First time? Run <code>backend/setup_admin.php</code> once to set the admin password.</p>
+    </div>
+  </div>
+
+  <script src="assets/js/api.js"></script>
+  <script src="assets/js/toast.js"></script>
+  <script>
+    Api.get('/settings/public.php').then(b => {
+      const el = document.getElementById('brandTitle');
+      if (b.store_logo) {
+        el.innerHTML = `<img src="../backend/uploads/logo/${b.store_logo}" alt="Logo" style="height:40px;display:block;margin:0 auto 8px;">${escapeHtmlLogin(b.store_name)}`;
+      } else {
+        el.textContent = '📚 ' + b.store_name;
+      }
+    }).catch(() => {});
+
+    function escapeHtmlLogin(str) {
+      const d = document.createElement('div');
+      d.textContent = str;
+      return d.innerHTML;
+    }
+
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('loginBtn');
+      const errorBox = document.getElementById('loginError');
+      errorBox.style.display = 'none';
+      btn.disabled = true;
+      btn.textContent = 'Signing in...';
+
+      try {
+        const data = await Api.post('/auth/login.php', {
+          username: document.getElementById('username').value.trim(),
+          password: document.getElementById('password').value,
+        });
+        Api.setCsrfToken(data.csrf_token);
+        sessionStorage.setItem('role', data.role);
+        location.href = 'app.html';
+      } catch (err) {
+        errorBox.textContent = err.message || 'Login failed.';
+        errorBox.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Sign In';
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Users - Book Store MS</title>
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<div class="page">
+  <div class="toolbar toolbar-end">
+    <button class="btn" id="addUserBtn">+ Add User</button>
+  </div>
+  <p class="hint mb-3">Create logins for your Managers and Cashiers here. Each person should have their own account — never share the admin login.</p>
+  <div id="usersTable" class="table-wrap"><div class="loading">Loading...</div></div>
+</div>
+
+<script src="assets/js/api.js"></script>
+<script src="assets/js/toast.js"></script>
+<script src="assets/js/common.js"></script>
+<script>
+  let roles = [];
+  let users = [];
+
+  Embedded.init('users').then(async () => {
+    roles = await Api.get('/users/index.php?roles=1');
+    load();
+    document.getElementById('addUserBtn').addEventListener('click', () => openForm());
+  });
+
+  async function load() {
+    users = await Api.get('/users/index.php');
+    render();
+  }
+
+  function render() {
+    const el = document.getElementById('usersTable');
+    if (!users.length) { el.innerHTML = '<div class="empty-state">No users found.</div>'; return; }
+    el.innerHTML = `
+      <table>
+        <thead><tr><th>Full Name</th><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${users.map(u => `
+            <tr>
+              <td>${escapeHtml(u.full_name)}</td>
+              <td>${escapeHtml(u.username)}</td>
+              <td>${escapeHtml(u.email)}</td>
+              <td><span class="badge badge-info">${escapeHtml(u.role_name)}</span></td>
+              <td><span class="badge ${u.status === 'active' ? 'badge-success' : 'badge-danger'}">${u.status}</span></td>
+              <td>${u.last_login ? new Date(u.last_login).toLocaleString() : 'Never'}</td>
+              <td>
+                <button class="btn btn-outline btn-sm" onclick='openForm(${JSON.stringify(u)})'>Edit</button>
+                <button class="btn btn-danger btn-sm" onclick="removeUser(${u.user_id})">Delete</button>
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  function roleOptions(selected) {
+    return roles.map(r => `<option value="${r.role_id}" ${r.role_id == selected ? 'selected' : ''}>${escapeHtml(r.role_name)}</option>`).join('');
+  }
+
+  function openForm(user) {
+    const isEdit = !!user;
+    Modal.open(isEdit ? 'Edit User' : 'Add User', `
+      <form id="userForm">
+        ${!isEdit ? `<div class="form-group"><label>Username *</label><input name="username" required></div>` : ''}
+        <div class="form-group"><label>Full Name *</label><input name="full_name" value="${isEdit ? escapeHtml(user.full_name) : ''}" required></div>
+        <div class="form-group"><label>Email *</label><input type="email" name="email" value="${isEdit ? escapeHtml(user.email) : ''}" required></div>
+        <div class="form-group"><label>Phone</label><input name="phone" value="${isEdit ? escapeHtml(user.phone || '') : ''}"></div>
+        <div class="form-group"><label>Role *</label><select name="role_id">${roleOptions(isEdit ? user.role_id : '')}</select></div>
+        ${isEdit ? `
+          <div class="form-group"><label>Status</label>
+            <select name="status">
+              <option value="active" ${user.status==='active'?'selected':''}>Active</option>
+              <option value="inactive" ${user.status==='inactive'?'selected':''}>Inactive</option>
+            </select>
+          </div>
+          <div class="form-group"><label>Reset Password (optional)</label><input type="password" name="new_password" placeholder="Leave blank to keep current password"></div>
+        ` : `
+          <div class="form-group"><label>Password *</label><input type="password" name="password" required></div>
+          <p class="hint">Minimum 8 characters, must include an uppercase letter and a number.</p>
+        `}
+      </form>
+    `, `
+      <button class="btn btn-outline" onclick="Modal.close()">Cancel</button>
+      <button class="btn" onclick="saveUser(${isEdit ? user.user_id : 'null'})">Save</button>
+    `);
+  }
+
+  async function saveUser(id) {
+    const form = document.getElementById('userForm');
+    const data = Object.fromEntries(new FormData(form).entries());
+    if (id) data.user_id = id;
+    try {
+      if (id) await Api.put('/users/index.php', data);
+      else await Api.post('/users/index.php', data);
+      Toast.success('User saved.');
+      Modal.close();
+      load();
+    } catch (e) {}
+  }
+
+  async function removeUser(id) {
+    if (!confirmAction('Delete this user account? This cannot be undone.')) return;
+    try {
+      await Api.del('/users/index.php?id=' + id);
+      Toast.success('User deleted.');
+      load();
+    } catch (e) {}
+  }
+</script>
+</body>
+</html>

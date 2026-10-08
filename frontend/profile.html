@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Profile - Book Store MS</title>
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<div class="page">
+  <div class="grid-2">
+    <div class="card">
+      <h2>Profile Information</h2>
+      <div class="avatar-upload-wrap">
+        <div class="avatar-preview" id="avatarPreview"></div>
+        <div class="avatar-upload-actions">
+          <input type="file" id="avatarInput" accept="image/png,image/jpeg,image/webp">
+          <div class="flex gap-2">
+            <button type="button" class="btn btn-outline btn-sm" id="removeAvatarBtn" style="display:none;">Remove</button>
+          </div>
+          <span class="hint">JPG, PNG, or WEBP. Max 2MB.</span>
+        </div>
+      </div>
+      <form id="profileForm">
+        <div class="form-group"><label>Username</label><input id="usernameField" disabled></div>
+        <div class="form-group"><label>Full Name</label><input name="full_name" required disabled></div>
+        <div class="form-group"><label>Email</label><input type="email" name="email" required disabled></div>
+        <div class="form-group"><label>Phone</label><input name="phone" disabled></div>
+        <button type="submit" class="btn" id="saveProfileBtn" disabled>Save Profile</button>
+        <p class="hint" id="profileLoadError" style="display:none; color: var(--color-danger);">
+          Couldn't load your profile. <a href="#" id="profileRetryLink">Retry</a>
+        </p>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Change Password</h2>
+      <form id="passwordForm">
+        <div class="form-group"><label>Current Password</label><input type="password" name="current_password" required></div>
+        <div class="form-group"><label>New Password</label><input type="password" name="new_password" required></div>
+        <div class="form-group"><label>Confirm New Password</label><input type="password" name="confirm_password" required></div>
+        <p class="hint">Minimum 8 characters, must include an uppercase letter and a number.</p>
+        <button type="submit" class="btn">Change Password</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script src="assets/js/api.js"></script>
+<script src="assets/js/toast.js"></script>
+<script src="assets/js/common.js"></script>
+<script>
+  // AVATAR_PLACEHOLDER_SVG is already declared globally by common.js (loaded above) - reused here.
+
+  function renderAvatarPreview(profileImage) {
+    const preview = document.getElementById('avatarPreview');
+    preview.innerHTML = profileImage
+      ? `<img src="../backend/uploads/avatars/${encodeURIComponent(profileImage)}" alt="">`
+      : AVATAR_PLACEHOLDER_SVG;
+    document.getElementById('removeAvatarBtn').style.display = profileImage ? 'inline-block' : 'none';
+  }
+
+  // The sidebar avatar lives in the parent shell (app.html), not in this iframe,
+  // so tell it to re-pull the session and repaint just its own footer/popup.
+  function notifyParentAvatarChanged() {
+    try {
+      if (window.top && window.top !== window && window.top.Layout) {
+        window.top.Layout.refreshUser();
+      }
+    } catch {
+      // Cross-origin or otherwise inaccessible - non-fatal, sidebar just won't live-update.
+    }
+  }
+
+  async function loadProfile() {
+    const form = document.getElementById('profileForm');
+    const errorEl = document.getElementById('profileLoadError');
+    errorEl.style.display = 'none';
+    try {
+      const profile = await Api.get('/auth/profile.php');
+      document.getElementById('usernameField').value = profile.username;
+      form.elements['full_name'].value = profile.full_name;
+      form.elements['email'].value = profile.email;
+      form.elements['phone'].value = profile.phone || '';
+      renderAvatarPreview(profile.profile_image);
+      form.elements['full_name'].disabled = false;
+      form.elements['email'].disabled = false;
+      form.elements['phone'].disabled = false;
+      document.getElementById('saveProfileBtn').disabled = false;
+    } catch (err) {
+      // Api already showed a toast; keep the form disabled and offer a retry
+      // instead of leaving a blank, clickable form that looks broken.
+      errorEl.style.display = 'block';
+    }
+  }
+
+  document.getElementById('profileRetryLink').addEventListener('click', (e) => {
+    e.preventDefault();
+    loadProfile();
+  });
+
+  Embedded.init('profile').then(loadProfile);
+
+  document.getElementById('profileForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.target).entries());
+    try {
+      await Api.put('/auth/profile.php', data);
+      Toast.success('Profile updated.');
+      notifyParentAvatarChanged(); // name may have changed too
+    } catch (err) {}
+  });
+
+  async function uploadSelectedAvatar() {
+    const input = document.getElementById('avatarInput');
+    if (!input.files[0]) { Toast.error('Choose a photo first.'); return; }
+    const fd = new FormData();
+    fd.append('avatar', input.files[0]);
+    try {
+      const result = await Api.upload('/auth/upload_avatar.php', fd);
+      renderAvatarPreview(result.profile_image);
+      input.value = '';
+      Toast.success('Profile photo updated.');
+      notifyParentAvatarChanged();
+    } catch (err) {}
+  }
+
+  // Upload as soon as a file is picked - no separate "Upload Photo" click needed.
+  document.getElementById('avatarInput').addEventListener('change', uploadSelectedAvatar);
+
+  document.getElementById('removeAvatarBtn').addEventListener('click', async () => {
+    if (!confirmAction('Remove your profile photo?')) return;
+    try {
+      await Api.del('/auth/upload_avatar.php');
+      renderAvatarPreview(null);
+      Toast.success('Profile photo removed.');
+      notifyParentAvatarChanged();
+    } catch (err) {}
+  });
+
+  document.getElementById('passwordForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.target).entries());
+    try {
+      await Api.post('/auth/change_password.php', data);
+      Toast.success('Password changed successfully.');
+      e.target.reset();
+    } catch (err) {}
+  });
+</script>
+</body>
+</html>
