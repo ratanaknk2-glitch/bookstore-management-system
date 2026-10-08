@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sales (POS) - Book Store MS</title>
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<div id="app-shell">
+  <h1>Point of Sale</h1>
+  <div class="grid-2">
+    <div class="card">
+      <h2>Find Book</h2>
+      <input type="text" id="posSearch" placeholder="Search by title or ISBN...">
+      <div id="posResults" class="mt-3" style="max-height:420px; overflow-y:auto;"></div>
+    </div>
+
+    <div class="card">
+      <h2>Cart</h2>
+      <div id="cartTable" class="table-wrap"><div class="empty-state">Cart is empty.</div></div>
+
+      <div class="form-group mt-3">
+        <label>Customer (optional)</label>
+        <select id="customerSelect"><option value="">Walk-in Customer</option></select>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Discount Code</label><input type="text" id="discountCode" placeholder="e.g. SAVE10"></div>
+        <div class="form-group"><label>Payment Method</label>
+          <select id="paymentMethod"><option>Cash</option><option>Card</option><option>Mobile</option></select>
+        </div>
+      </div>
+      <div class="form-group"><label>Amount Paid</label><input type="number" step="0.01" id="amountPaid"></div>
+
+      <div id="cartSummary" class="mt-3"></div>
+      <button class="btn btn-block mt-3" id="checkoutBtn">Process Payment</button>
+    </div>
+  </div>
+
+  <div class="card mt-3">
+    <h2>Today's Sales</h2>
+    <div id="todaySales"><div class="loading">Loading...</div></div>
+  </div>
+</div>
+
+<script src="assets/js/api.js"></script>
+<script src="assets/js/toast.js"></script>
+<script src="assets/js/common.js"></script>
+<script>
+  let cart = []; // [{book_id, title, unit_price, quantity, available}]
+
+  Layout.init('sales').then(async () => {
+    await loadCustomers();
+    loadTodaySales();
+    searchBooks(); // show the full available catalog immediately, before any typing
+    document.getElementById('posSearch').addEventListener('input', debounce(searchBooks, 350));
+    document.getElementById('checkoutBtn').addEventListener('click', checkout);
+    document.getElementById('discountCode').addEventListener('change', renderSummary);
+  });
+
+  function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+
+  async function loadCustomers() {
+    const customers = await Api.get('/customers/index.php');
+    document.getElementById('customerSelect').innerHTML += customers.map(c =>
+      `<option value="${c.customer_id}">${escapeHtml(c.full_name)}</option>`).join('');
+  }
+
+  async function searchBooks() {
+    const q = document.getElementById('posSearch').value.trim();
+    const resultsEl = document.getElementById('posResults');
+    resultsEl.innerHTML = '<div class="loading">Loading books...</div>';
+    const params = new URLSearchParams({ per_page: 50, status: 'Available' });
+    if (q) params.set('search', q);
+    const result = await Api.get('/books/index.php?' + params.toString());
+    if (!result.items.length) { resultsEl.innerHTML = '<div class="empty-state">No books found.</div>'; return; }
+    resultsEl.innerHTML = result.items.map(b => `
+      <div class="flex-between" style="padding:8px 0; border-bottom:1px solid var(--color-border);">
+        <div>
+          <div><b>${escapeHtml(b.title)}</b></div>
+          <div class="text-muted">$${Number(b.selling_price).toFixed(2)} • ${b.quantity} in stock</div>
+        </div>
+        <button class="btn btn-sm" onclick='addToCart(${JSON.stringify({book_id:b.book_id,title:b.title,unit_price:b.selling_price,available:b.quantity})})'>Add</button>
+      </div>`).join('');
+  }
+
+  function addToCart(book) {
+    const existing = cart.find(i => i.book_id === book.book_id);
+    if (existing) {
+      if (existing.quantity + 1 > book.available) { Toast.error('Not enough stock.'); return; }
+      existing.quantity += 1;
+    } else {
+      cart.push({ ...book, quantity: 1 });
+    }
+    renderCart();
+  }
+
+  function updateQty(bookId, qty) {
+    const item = cart.find(i => i.book_id === bookId);
+    if (!item) return;
+    qty = parseInt(qty, 10);
+    if (qty <= 0) { cart = cart.filter(i => i.book_id !== bookId); }
+    else if (qty > item.available) { Toast.error('Not enough stock.'); }
+    else { item.quantity = qty; }
+    renderCart();
+  }
+
+  function renderCart() {
+    const el = document.getElementById('cartTable');
+    if (!cart.length) { el.innerHTML = '<div class="empty-state">Cart is empty.</div>'; renderSummary(); return; }
+    el.innerHTML = `
+      <table>
+        <thead><tr><th>Item</th><th>Price</th><th>Qty</th><th>Subtotal</th><th></th></tr></thead>
+        <tbody>
+          ${cart.map(i => `
+            <tr>
+              <td>${escapeHtml(i.title)}</td>
+              <td>$${Number(i.unit_price).toFixed(2)}</td>
+              <td><input type="number" min="1" value="${i.quantity}" style="width:70px;" onchange="updateQty(${i.book_id}, this.value)"></td>
+              <td>$${(i.unit_price * i.quantity).toFixed(2)}</td>
+              <td><button class="btn btn-danger btn-sm" onclick="updateQty(${i.book_id}, 0)">✕</button></td>
+            </tr>`).join('')}
+        </tbody>
+      </table>`;
+    renderSummary();
+  }
+
+  function renderSummary() {
+    const subtotal = cart.reduce((sum, i) => sum + i.unit_price * i.quantity, 0);
+    document.getElementById('cartSummary').innerHTML = `
+      <div class="flex-between"><span>Subtotal</span><b>$${subtotal.toFixed(2)}</b></div>
+      <p class="hint">Discount and tax are calculated by the server at checkout for accuracy.</p>`;
+  }
+
+  async function checkout() {
+    if (!cart.length) { Toast.error('Cart is empty.'); return; }
+    const btn = document.getElementById('checkoutBtn');
+    btn.disabled = true;
+    btn.textContent = 'Processing...';
+    try {
+      const result = await Api.post('/sales/index.php', {
+        items: cart.map(i => ({ book_id: i.book_id, quantity: i.quantity })),
+        customer_id: document.getElementById('customerSelect').value || null,
+        discount_code: document.getElementById('discountCode').value.trim(),
+        payment_method: document.getElementById('paymentMethod').value,
+        amount_paid: document.getElementById('amountPaid').value || 0,
+      });
+      Toast.success(`Sale completed! Invoice ${result.invoice_number} — Total $${Number(result.total_amount).toFixed(2)}`);
+      const paidEntered = parseFloat(document.getElementById('amountPaid').value) || 0;
+      if (paidEntered < result.total_amount) {
+        Toast.error(`Warning: amount paid ($${paidEntered.toFixed(2)}) was less than the total ($${Number(result.total_amount).toFixed(2)}). Balance still owed: $${(result.total_amount - paidEntered).toFixed(2)}`, 8000);
+      }
+      cart = [];
+      renderCart();
+      document.getElementById('discountCode').value = '';
+      document.getElementById('amountPaid').value = '';
+      loadTodaySales();
+      window.open('../backend/api/sales/receipt.php?id=' + result.sale_id, '_blank');
+    } catch (e) {
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Process Payment';
+    }
+  }
+
+
+
+  async function loadTodaySales() {
+    const sales = await Api.get('/sales/index.php');
+    const el = document.getElementById('todaySales');
+    if (!sales.length) { el.innerHTML = '<div class="empty-state">No sales today yet.</div>'; return; }
+    const canManage = Layout.hasRole('Admin', 'Manager');
+    el.innerHTML = `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Invoice</th><th>Customer</th><th>Cashier</th><th>Total</th><th>Payment</th><th>Status</th><th>Receipt</th>${canManage ? '<th>Action</th>' : ''}</tr></thead>
+        <tbody>
+          ${sales.map(s => `
+            <tr>
+              <td>${escapeHtml(s.invoice_number)}</td>
+              <td>${escapeHtml(s.customer_name || 'Walk-in')}</td>
+              <td>${escapeHtml(s.cashier_name)}</td>
+              <td>$${Number(s.total_amount).toFixed(2)}</td>
+              <td>${escapeHtml(s.payment_method)}</td>
+              <td><span class="badge ${s.status === 'Completed' ? 'badge-success' : 'badge-danger'}">${s.status}</span></td>
+              <td><button class="btn btn-outline btn-sm" onclick="reprintSale(${s.sale_id})">Reprint</button></td>
+              ${canManage ? `<td>${s.status === 'Completed' ? `<button class="btn btn-danger btn-sm" onclick="cancelSale(${s.sale_id})">Cancel</button>` : '—'}</td>` : ''}
+            </tr>`).join('')}
+        </tbody>
+      </table></div>`;
+  }
+
+  function reprintSale(saleId) {
+    window.open('../backend/api/sales/receipt.php?id=' + saleId, '_blank');
+  }
+
+  async function cancelSale(saleId) {
+    if (!confirmAction('Cancel this sale and restore stock?')) return;
+    try {
+      await Api.put('/sales/index.php', { sale_id: saleId, action: 'cancel' });
+      Toast.success('Sale cancelled.');
+      loadTodaySales();
+    } catch (e) {}
+  }
+</script>
+</body>
+</html>
